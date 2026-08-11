@@ -29,7 +29,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 _addon.author = 'SnickySnacks'
 _addon.command = 'asc'
 _addon.name = 'AutoSkillChains'
-_addon.version = '1.26.07.30'
+_addon.version = '1.26.08.10'
 
 require('luau')
 require('pack')
@@ -207,7 +207,7 @@ function load_autows(on_change_only, reload)
         return
     end
 
-    if on_change_only and (info.main_weapon == last_weapon) then
+    if info.config_file ~= nil and on_change_only and (info.main_weapon == last_weapon) then
         if settings.debugLogs then
             windower.add_to_chat(207, 'on_change_only and info.main_weapon == last_weapon')
         end
@@ -243,7 +243,7 @@ function load_autows(on_change_only, reload)
     if settings.debugLogs then
         windower.add_to_chat(207, 'on_change_only: ' .. (on_change_only and 'true' or 'false') .. ', \'' .. last_weapon_type .. '\' -> \'' .. current_weapon_type .. '\', main_weapon: ' .. (info.main_weapon or 'nil'))
     end
-    if on_change_only and (current_weapon_type == last_weapon_type) then
+    if info.config_file ~= nil and on_change_only and (current_weapon_type == last_weapon_type) then
         return
     end
 
@@ -343,12 +343,12 @@ function update_weapon()
 end
 
 function update_opener()
-    local main_weapon = windower.ffxi.get_items(info.main_bag, info.main_weapon).id
-    local wasEnabled = autows and autows.enabled
-    local hadOpener = autows and autows.opener
-    load_autows(true, false)
+    if info.main_bag ~= nil then
+        local main_weapon = windower.ffxi.get_items(info.main_bag, info.main_weapon)
+        local wasEnabled = autows and autows.enabled
+        local hadOpener = autows and autows.opener
+        load_autows(true, false)
 
-    if main_weapon ~= 0 then
         if autows ~= nil then
             if autows.opener ~= '' then
                 local weaponskills = windower.ffxi.get_abilities().weapon_skills
@@ -380,6 +380,7 @@ function update_opener()
         end
         return
     end
+
     if not check_opener or coroutine.status(check_opener) ~= 'suspended' then
         check_opener = coroutine.schedule(update_opener, 10)
     end
@@ -798,7 +799,6 @@ function action_handler(act)
         -- But shouldn't the chainbound code catch that? hmm
         buffs[actor] = buffs[actor] or {}
         buffs[actor][param] = buff_dur[param] + os.time()
---        windower.add_to_chat(207, 'Actor Gained Buff(' .. param .. '): ' .. res.buffs[param].en)
     end
 end
 
@@ -926,6 +926,16 @@ end)
 windower.register_event('zone change', function()
     resonating = {}
     autowsLastCheck = os.clock() + 15
+end)
+
+windower.register_event('login', function()
+    if windower.ffxi.get_info().logged_in then
+        local equip = windower.ffxi.get_items('equipment')
+        info.main_weapon = equip.main
+        info.main_bag = equip.main_bag
+        info.range = equip.range
+        info.range_bag = equip.range_bag
+    end
 end)
 
 windower.register_event('load', function()
