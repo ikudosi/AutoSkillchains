@@ -29,7 +29,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 _addon.author = 'SnickySnacks'
 _addon.command = 'asc'
 _addon.name = 'AutoSkillChains'
-_addon.version = '1.26.08.10'
+_addon.version = '1.26.08.17'
 
 require('luau')
 require('pack')
@@ -49,6 +49,8 @@ default.color = false
 default.display = {text={size=12,font='Consolas'},pos={x=0,y=0},bg={visible=true}}
 default_autows = {}
 default_autows.enabled = false
+default_autows.am3 = false
+default_autows.am3_ws = ''
 default_autows.open = true
 default_autows.openTp = 999
 default_autows.openWsDelay = 0.5
@@ -200,49 +202,22 @@ function try_load_config(path)
 end
 
 function load_autows(on_change_only, reload)
-    if info == nil then
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'info was nil')
-        end
-        return
-    end
+    if info == nil then return end
 
     if info.config_file ~= nil and on_change_only and (info.main_weapon == last_weapon) then
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'on_change_only and info.main_weapon == last_weapon')
-        end
         return
     end
     
     local current_weapon_type = ''
-    
-    if info.main_weapon == nil or info.main_weapon == 0 then 
-        current_weapon_type = "Hand-to-Hand"
-    else
-        if info.main_bag ~= nil then
-            if res.items ~= nil then
-                local item = windower.ffxi.get_items(info.main_bag, info.main_weapon)
-                if item ~= nil then
-                    local res_item = res.items[item.id]
-                    if res_item ~= nil then
-                        current_weapon_type = res.skills[res_item.skill].en
-                    elseif settings.debugLogs then
-                        windower.add_to_chat(207, 'res.items[item.id] was nil');
-                    end
-                elseif settings.debugLogs then
-                    windower.add_to_chat(207, 'windower.ffxi.get_items(info.main_bag, info.main_weapon) was nil');
-                end
-            else
-                windower.add_to_chat(207, 'res.items was nil');
-            end
-        else
-            windower.add_to_chat(207, 'info.main_bag was nil');
+    if info.main_weapon ~= nil and info.main_weapon ~= 0 and info.main_bag ~= nil then
+        local item = windower.ffxi.get_items(info.main_bag, info.main_weapon)
+        if item and res.items[item.id] then
+            current_weapon_type = res.skills[res.items[item.id].skill].en
         end
+    elseif info.main_weapon == nil or info.main_weapon == 0 then
+        current_weapon_type = "Hand-to-Hand"
     end
 
-    if settings.debugLogs then
-        windower.add_to_chat(207, 'on_change_only: ' .. (on_change_only and 'true' or 'false') .. ', \'' .. last_weapon_type .. '\' -> \'' .. current_weapon_type .. '\', main_weapon: ' .. (info.main_weapon or 'nil'))
-    end
     if info.config_file ~= nil and on_change_only and (current_weapon_type == last_weapon_type) then
         return
     end
@@ -252,7 +227,6 @@ function load_autows(on_change_only, reload)
 
     autowsNextCmd = ''
     autowsNextWS = ''
-
     last_weapon = info.main_weapon
     last_weapon_type = current_weapon_type
 
@@ -264,31 +238,18 @@ function load_autows(on_change_only, reload)
 
     if (current_weapon_type ~= '') and try_load_config(path .. 'autows-' .. info.job .. '-' .. current_weapon_type .. '.xml') then
         info.config_file = string.upper(info.job) .. '-' .. current_weapon_type
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'Loaded config for ' .. info.job .. ' + ' .. current_weapon_type)
-        end
     elseif try_load_config(path .. 'autows-' .. info.job .. '.xml') then
         info.config_file = string.upper(info.job)
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'Loaded config for ' .. info.job)
-        end
     elseif try_load_config(path .. 'autows-' .. current_weapon_type .. '.xml') then
         info.config_file = current_weapon_type
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'Loaded config for ' .. current_weapon_type)
-        end
     elseif reload or not default_filt then
         default_filt = true
         autows = config.load(path .. 'autows-default.xml', default_autows)
         config.save(autows)
-        if settings.debugLogs then
-            windower.add_to_chat(207, 'Loaded default config')
-        end
     end
 end
 
 function print_autows_status()
-    
     if #autows.levelPriority < 2 then
         autows.close = false
     end
@@ -301,37 +262,18 @@ function print_autows_status()
         end
     end
 
-    windower.add_to_chat(207, '[AutoWS%s: %s] Open: %s, Close: %s, SC: %s, MB: %s @ %d < HP%% < %s':format(not default_filt and '(' .. info.config_file .. ')' or '', autows.enabled and 'ON' or 'OFF', openerText, autows.close and 'ON' or 'OFF', autows.waitForSC and 'ON' or 'OFF', autows.waitForMB and 'ON' or 'OFF', autows.hpGt, autows.hpLt))
-    if autows.close then
-        local levelPriority = ''
-        local chainPriority = ''
-        local wsPriority = ''
-        for x=2,#autows.levelPriority,1 do
-            if x > 2 then
-                levelPriority = levelPriority..' -> '
-            end
-            levelPriority = levelPriority..autows.levelPriority[x]
-        end
-        if autows.chainPriority ~= '' then
-            chainPriority = ', Prioritizing '..autows.chainPriority
-            windower.add_to_chat(207, 'Closing Level %s%s':format(levelPriority, chainPriority))
-        end
-        if #autows.closeWsPriority > 1 then
-            for x=2,#autows.closeWsPriority,1 do
-                if x > 2 then
-                    wsPriority = wsPriority..' -> '
-                end
-                wsPriority = wsPriority..autows.closeWsPriority[x]
-            end
-            windower.add_to_chat(207, 'WS Priority: %s':format(wsPriority))
-        end
-    end
+    windower.add_to_chat(207, '[AutoWS%s: %s] AM3 Gate: %s (WS: %s), Open: %s, Close: %s':format(
+        not default_filt and '(' .. info.config_file .. ')' or '', 
+        autows.enabled and 'ON' or 'OFF', 
+        autows.am3 and 'ON' or 'OFF',
+        autows.am3_ws ~= '' and autows.am3_ws or 'None',
+        openerText, 
+        autows.close and 'ON' or 'OFF'
+    ))
 end
 
 function update_weapon()
-    if not settings.Show.weapon[info.job] then
-        return
-    end
+    if not settings.Show.weapon[info.job] then return end
     local main_weapon = windower.ffxi.get_items(info.main_bag, info.main_weapon).id
     if main_weapon ~= 0 then
         info.aeonic = aeonic_weapon[main_weapon] or info.range and aeonic_weapon[windower.ffxi.get_items(info.range_bag, info.range).id]
@@ -344,43 +286,24 @@ end
 
 function update_opener()
     if info.main_bag ~= nil then
-        local main_weapon = windower.ffxi.get_items(info.main_bag, info.main_weapon)
         local wasEnabled = autows and autows.enabled
         local hadOpener = autows and autows.opener
         load_autows(true, false)
 
-        if autows ~= nil then
-            if autows.opener ~= '' then
-                local weaponskills = windower.ffxi.get_abilities().weapon_skills
-                local wasValid = info.openerValid
-                for x=1,#weaponskills,1 do
-                    if res['weapon_skills'][weaponskills[x]].name == autows.opener then
-                        info.openerValid = true
-                        if settings.debugLogs then
-                            windower.add_to_chat(207, "update opener (valid)")
-                        end
-                        if (wasEnabled ~= autows.enabled) or (wasValid ~= info.openerValid) or (hadOpener ~= autows.opener) then
-                            schedule_autows_status()
-                        end
-                        return
-                    end
+        if autows ~= nil and autows.opener ~= '' then
+            local weaponskills = windower.ffxi.get_abilities().weapon_skills
+            local wasValid = info.openerValid
+            for x=1,#weaponskills,1 do
+                if res['weapon_skills'][weaponskills[x]].name == autows.opener then
+                    info.openerValid = true
+                    return
                 end
-                info.openerValid = false
-                if settings.debugLogs then
-                    windower.add_to_chat(207, "update opener (invalid)")
-                end
-                if (wasEnabled ~= autows.enabled) or (wasValid ~= info.openerValid) or (hadOpener ~= autows.opener) then
-                    schedule_autows_status()
-                end
-                return
             end
-            if (wasEnabled ~= autows.enabled) or (hadOpener ~= autows.opener) then
-                schedule_autows_status()
-            end
+            info.openerValid = false
+            return
         end
         return
     end
-
     if not check_opener or coroutine.status(check_opener) ~= 'suspended' then
         check_opener = coroutine.schedule(update_opener, 10)
     end
@@ -389,11 +312,8 @@ end
 function aeonic_am_level()
     if info.aeonic then
         for x=270,272 do
-            if buffs[info.player][x] then
+            if buffs[info.player] and buffs[info.player][x] then
                 local player = windower.ffxi.get_player()
-                -- There's no real way to determine if the player will hold TP to the next AM,
-                -- but we can assume that 1000 tp is the minimum
-                -- however, the AM increase logic only applies to the aeonic WS. how to deal...                
                 local tp = (player and math.floor(player.vitals.tp / 1000)) or 1
                 tp = (tp == 0) and 1 or tp
                 return x-269, tp
@@ -401,6 +321,24 @@ function aeonic_am_level()
         end
     end
     return 0, 0
+end
+
+function has_am3()
+    local player = windower.ffxi.get_player()
+    if player and player.buffs then
+        for i=1, #player.buffs do
+            local buff_id = player.buffs[i]
+            if buff_id == 272 or buff_id == 271 then
+                return true
+            end
+        end
+    end
+    if buffs[info.player] then
+        if buffs[info.player][272] or buffs[info.player][271] then
+            return true
+        end
+    end
+    return false
 end
 
 function aeonic_am(step)
@@ -441,16 +379,8 @@ function get_skills(abilities, active, resource, anyAM, stepAM, tpAM)
         local ability_id = abilities[k]
         local skillchain = skills[resource][ability_id]
         if skillchain then
-        -- The base problem is that an aeonic ws like shijin spiral can act in many different ways:
-        -- if AM is not up, the WS will put light on the target, but cannot make lv. 4 light or radiance
-        -- if AM is not up but WS will give AM high enough for radiance for that step? Only light!
-        -- if AM is up, but SC step too low for radiance and the next AM won't be high enough for that step, it will make light
-        -- if AM is up, but SC step too low for radiance and the next AM is high enough for that step it will make radiance
-        -- if AM is up, and SC step high enough for radiance, the WS will make radiance
-        
             local lv, prop, aeonic = check_props(active, aeonic_prop(anyAM, skillchain, info.player))
             if prop then
---                windower.add_to_chat(1, 'anyAM: ' .. (anyAM and 'true' or 'false') .. ', stepAM: ' .. (stepAM and 'true' or 'false') .. ', tpAM: ' .. (tpAM and 'true' or 'false') .. ', aeonic: ' .. (aeonic and 'valid' or 'nil') .. ', prop: ' .. (prop and 'valid' or 'nil'))
                 prop = (stepAM and aeonic) or (tpAM and skillchain.aeonic and aeonic) or prop
                 local temp = {}
                 temp.name = res[resource][ability_id].name
@@ -477,7 +407,6 @@ function tableCombine(dst, src)
             dst[i][#dst[i]+1] = src[i][j]
         end
     end
-    
     return dst
 end
 
@@ -490,7 +419,6 @@ function find_weaponskill(tempTable, reson, command)
            for k=#tempTable[lp],1,-1 do
             local name = tempTable[lp][k].name
             if not tableContains(autows.blacklist, name) then
-                -- if chain priority is not set or matches the current property, use this ws unless ws priority is set
                 if autows.chainPriority == '' or tempTable[lp][k].prop == autows.chainPriority then
                     if #autows.closeWsPriority < 2 then
                         autowsNextCmd = command
@@ -499,7 +427,6 @@ function find_weaponskill(tempTable, reson, command)
                     end
                 end
                 
-                -- Any match here will guarantee we use a prioritized ws, but we need to check for higher priorities, too
                 for i=2,last_ws_priority-1,1 do
                     if name == autows.closeWsPriority[i] then
                         last_ws_priority = i
@@ -507,14 +434,12 @@ function find_weaponskill(tempTable, reson, command)
                     end
                 end
                 
-                -- We found a prioritized ws, so use it
                 if last_ws_priority ~= #autows.closeWsPriority+1 then
                     autowsNextCmd = command
                     autowsNextWS = autows.closeWsPriority[last_ws_priority]
                     return tempTable
                 end
 
-                -- store the last_prop if none is set, or update it if the chain priority matches
                 if (last_prop == nil) or (lp == 3 and autows.chainPriority ~= '' and last_prop ~= autows.chainPriority and tempTable[lp][k].prop == autows.chainPriority) then
                     last_lp = lp
                     last_k = k
@@ -531,7 +456,6 @@ function find_weaponskill(tempTable, reson, command)
 
     autowsNextCmd = ''
     autowsNextWS = ''
-
     return tempTable
 end
 
@@ -540,6 +464,7 @@ function check_results(reson)
     local resultTable = {{},{},{},{}}
     local outputTable = {}
     autowsNextWS = ''
+    
     if settings.Show.spell[info.job] and info.job == 'SCH' then
         tempTable = get_skills({0,1,2,3,4,5,6,7}, reson.active, 'elements')
         resultTable = tableCombine(resultTable, tempTable)
@@ -548,7 +473,7 @@ function check_results(reson)
         resultTable = tableCombine(resultTable, tempTable)
     elseif settings.Show.pet[info.job] and windower.ffxi.get_mob_by_target('pet') then
         tempTable = get_skills(windower.ffxi.get_abilities().job_abilities, reson.active, 'job_abilities')
-	if autows.enabled and autows.close then
+        if autows.enabled and autows.close then
             find_weaponskill(tempTable, reson, 'ja')
         end
         resultTable = tableCombine(resultTable, tempTable)
@@ -560,6 +485,7 @@ function check_results(reson)
         end
         resultTable = tableCombine(resultTable, tempTable)
     end
+
     local once = true
     for x=4,1,-1 do
         for k=#resultTable[x],1,-1 do
@@ -615,16 +541,12 @@ windower.register_event('prerender', function()
         if timer > 0 then
             local tryOpen = true
             if not reson.closed then
-                -- if using an aeonic and tp > aftermath, check_results
                 if reson.disp_info == nil then
                     reson.disp_info = check_results(reson)
                     reson.stepAM, reson.tpAM = aeonic_am_level()
                 else
                     local stepAM, tpAM = aeonic_am_level()
                     if (reson.stepAM ~= stepAM) or (reson.tpAM ~=tpAM) then
-                        if settings.debugLogs then
-                            windower.add_to_chat(207, 'Recalculating SCs due to change in AM')
-                        end
                         reson.disp_info = check_results(reson)
                         reson.stepAM = stepAM
                         reson.tpAM = tpAM
@@ -635,16 +557,14 @@ windower.register_event('prerender', function()
                     reson.waiting = true
                     reson.timer = '\\cs(255,0,0)Wait  %.1f\\cr':format(reson.delay - now)
                 else
+                    -- Allow closing if AM3 is active OR if an open SC window exists (so AM3 built by opener can immediately chain)
                     if autows.enabled and autows.close and timer > autows.closeWindowMinimum and now - autows.closeWindowDelay > reson.delay and reson.waiting then
                         if (now - autowsLastCheck) >= autows.closeWsDelay then
                             if (autowsNextWS ~= nil) and (autowsNextWS ~= '') then
                                 local player = windower.ffxi.get_player()
                                 if (player ~= nil) and (player.status == 1) and (targ ~= nil) then
-                                    if (autowsNextCmd ~= 'ws') or (player.vitals.tp > autows.closeTp) then -- autowsNextCmd == 'ja' or ?
+                                    if (autowsNextCmd ~= 'ws') or (player.vitals.tp > autows.closeTp) then 
                                         if (autows.hpGt < targ.hpp) and (targ.hpp < autows.hpLt) and ((autows.distance == 0) or (autows.distance >= math.floor(math.sqrt(targ.distance) * 10 + 0.5)/10)) then
-                                            if settings.debugLogs then
-                                                windower.add_to_chat(207, '%s':format(autowsNextWS))
-                                            end
                                             windower.send_command(('input /%s "%s" <t>'):format(autowsNextCmd, autowsNextWS))
                                             autowsLastCheck = now
                                         end
@@ -669,13 +589,13 @@ windower.register_event('prerender', function()
                     if (now - autowsLastCheck) >= autows.openWsDelay then
                         local player = windower.ffxi.get_player()
                         if (player ~= nil) and (player.status == 1) and (targ ~= nil) then
-                            if player.vitals.tp > autows.openTp then
+                            local needsAm3 = autows.am3 and not has_am3()
+                            local requiredTp = needsAm3 and 3000 or autows.openTp
+                            if player.vitals.tp >= requiredTp then
                                 if (autows.hpGt < targ.hpp) and (targ.hpp < autows.hpLt) and ((autows.distance == 0) or (autows.distance >= math.floor(math.sqrt(targ.distance) * 10 + 0.5)/10)) then
-                                    if info.openerValid and autows.opener ~= '' then
-                                        if settings.debugLogs then
-                                            windower.add_to_chat(207, '%s':format(autows.opener))
-                                        end
-                                        windower.send_command(('input /ws "%s" <t>'):format(autows.opener))
+                                    local targetWs = (needsAm3 and autows.am3_ws ~= '') and autows.am3_ws or autows.opener
+                                    if info.openerValid and targetWs ~= '' then
+                                        windower.send_command(('input /ws "%s" <t>'):format(targetWs))
                                         autowsLastCheck = now
                                     end
                                 end
@@ -694,13 +614,13 @@ windower.register_event('prerender', function()
                 if (now - autowsLastCheck) >= autows.openWsDelay then
                     local player = windower.ffxi.get_player()
                     if (player ~= nil) and (player.status == 1) and (targ ~= nil) then
-                        if player.vitals.tp > autows.openTp then
+                        local needsAm3 = autows.am3 and not has_am3()
+                        local requiredTp = needsAm3 and 3000 or autows.openTp
+                        if player.vitals.tp >= requiredTp then
                             if (autows.hpGt < targ.hpp) and (targ.hpp < autows.hpLt) and ((autows.distance == 0) or (autows.distance >= math.floor(math.sqrt(targ.distance) * 10 + 0.5)/10)) then
-                                if info.openerValid and autows.opener ~= '' then
-                                    if settings.debugLogs then
-                                        windower.add_to_chat(207, '%s':format(autows.opener))
-                                    end
-                                    windower.send_command(('input /ws "%s" <t>'):format(autows.opener))
+                                local targetWs = (needsAm3 and autows.am3_ws ~= '') and autows.am3_ws or autows.opener
+                                if info.openerValid and targetWs ~= '' then
+                                    windower.send_command(('input /ws "%s" <t>'):format(targetWs))
                                     autowsLastCheck = now
                                 end
                             end
@@ -710,6 +630,7 @@ windower.register_event('prerender', function()
             end
             if not visible then
                 skill_props:hide()
+                windower.send_command('gs c skillchain_off')
             end
         end
     elseif not visible then
@@ -757,22 +678,22 @@ function apply_properties(target, resource, action_id, properties, delay, step, 
     if target == targ_id then
         next_frame = clock
     end
+	if step > 1 then
+		windower.send_command('gs c skillchain_on')
+	end
 end
 
 function action_handler(act)
     local actionpacket = ActionPacket.new(act)
     local category = actionpacket:get_category_string()
 
-    if not categories:contains(category) or act.param == 0 then
-        return
-    end
+    if not categories:contains(category) or act.param == 0 then return end
 
     local actor = actionpacket:get_id()
     local target = actionpacket:get_targets()()
     local action = target:get_actions()()
     local message_id = action:get_message_id()
     local add_effect = action:get_add_effect()
-    --local basic_info = action:get_basic_info()
     local param, resource, action_id, interruption, conclusion = action:get_spell()
     local ability = skills[resource] and skills[resource][action_id]
 
@@ -788,15 +709,12 @@ function action_handler(act)
         end
 
         local closed = step > 5 or level == 4
-
         apply_properties(target.id, resource, action_id, {skillchain}, delay, step, closed)
     elseif ability and (message_ids:contains(message_id) or message_id == 2 and buffs[actor] and chain_buff(buffs[actor])) then
         apply_properties(target.id, resource, action_id, aeonic_prop(true, ability, actor), ability.delay or 3, 1)
     elseif message_id == 529 then
         apply_properties(target.id, resource, action_id, chainbound[param], 2, 1, false, param)
     elseif message_id == 100 and buff_dur[param] then
-        -- Used to determine if someone *else* is using an ability that will let us chain?
-        -- But shouldn't the chainbound code catch that? hmm
         buffs[actor] = buffs[actor] or {}
         buffs[actor][param] = buff_dur[param] + os.time()
     end
@@ -817,31 +735,18 @@ windower.register_event('incoming chunk', function(id, data)
         local set_buff = {}
         for n=1,32 do
             local buff = data:unpack('H', n*2+7)
-            if buff_dur[buff] or buff > 269 and buff < 273 then
+            if buff_dur[buff] or (buff >= 270 and buff <= 273) then
                 set_buff[buff] = true
---                windower.add_to_chat(207, 'Has Buff (' .. buff .. '): ' .. res.buffs[buff].en)
             end
         end
         buffs[info.player] = set_buff
     elseif id == 0xAC then
-        if settings.debugLogs then
-            windower.add_to_chat(207, "ability change")
-        end
         update_opener()
     end
 end)
 
---[[ I'd prefer to use gain/lose buff, but it's unreliable if the addon is reloaded...
-windower.register_event('gain buff', function(buff_id)
-    if tracked_buffs:contains(buff_id) then
-        windower.add_to_chat(207, 'Gained Buff(' .. buff_id .. '): ' .. res.buffs[buff_id].en)
-        buffs[info.player][buff_id] = true
-    end
-end)
-]]--
 windower.register_event('lose buff', function(buff_id)
     if tracked_buffs:contains(buff_id) then
---        windower.add_to_chat(207, 'Lost Buff(' .. buff_id .. '): ' .. res.buffs[buff_id].en)
         buffs[info.player][buff_id] = nil
     end
 end)
@@ -860,6 +765,29 @@ windower.register_event('addon command', function(cmd, ...)
         local arg = ... and ...:lower() == 'all' and 'all'
         config.save(settings, arg)
         windower.add_to_chat(207, '%s: settings saved to %s character%s.':format(_addon.name, arg or 'current', arg and 's' or ''))
+    elseif cmd == 'am3' then
+        local arg = ... and ...:lower()
+        if arg == 'on' then
+            autows.am3 = true
+            windower.add_to_chat(207, '%s: AM3 Gate enabled (Will hold TP until 3000 to cast AM3 WS).':format(_addon.name))
+        elseif arg == 'off' then
+            autows.am3 = false
+            windower.add_to_chat(207, '%s: AM3 Gate disabled.':format(_addon.name))
+        else
+            windower.add_to_chat(207, '%s: Current AM3 Gate status: %s (Active check: %s)':format(_addon.name, autows.am3 and 'ON' or 'OFF', has_am3() and 'YES' or 'NO'))
+        end
+        config.save(autows)
+        print_autows_status()
+    elseif cmd == 'am3ws' then
+        local ws_name = table.concat({...}, ' ')
+        if ws_name ~= '' then
+            autows.am3_ws = ws_name
+            windower.add_to_chat(207, '%s: AM3 Weaponskill set to: %s':format(_addon.name, ws_name))
+            config.save(autows)
+        else
+            windower.add_to_chat(207, '%s: Current AM3 Weaponskill: %s':format(_addon.name, autows.am3_ws ~= '' and autows.am3_ws or 'None'))
+        end
+        print_autows_status()
     elseif default.Show[cmd] then
         if not default.Show[cmd][info.job] then
             return error('unable to set %s on %s.':format(cmd, info.job))
@@ -871,35 +799,31 @@ windower.register_event('addon command', function(cmd, ...)
             settings.Show[cmd]:remove(info.job)
         end
         config.save(settings)
-        config.reload(settings) -- why?
-        windower.add_to_chat(207, '%s: %s info will no%s be displayed on %s.':format(_addon.name, cmd, key and ' longer' or 'w', info.job))--'t' or 'w'
+        config.reload(settings)
+        windower.add_to_chat(207, '%s: %s info will no%s be displayed on %s.':format(_addon.name, cmd, key and ' longer' or 'w', info.job))
     elseif type(default[cmd]) == 'boolean' then
         settings[cmd] = not settings[cmd]
         windower.add_to_chat(207, '%s: %s %s':format(_addon.name, cmd, settings[cmd] and 'on' or 'off'))
     elseif cmd == 'autows' then
         if ... then
-            local subcmd = ...:lower();
-            if subcmd == 'reload' then
-                windower.add_to_chat(207, 'Reloading AutoWS config!');
+            string_subcmd = ...:lower();
+            if string_subcmd == 'reload' then
                 local was_enabled = autows.enabled
                 load_autows(false, true)
                 autows.enabled = was_enabled
                 update_opener()
-            elseif subcmd == 'on' then
+            elseif string_subcmd == 'on' then
                 autows.enabled = true
-            elseif subcmd == 'off' then
+            elseif string_subcmd == 'off' then
                 autows.enabled = false
                 autowsNextWS = ''
             end
-        end
-        if settings.debugLogs then
-            windower.add_to_chat(207, "command")
         end
         print_autows_status()
     elseif cmd == 'eval' then
         assert(loadstring(table.concat({...}, ' ')))()
     else
-        windower.add_to_chat(207, '%s: valid commands [save | move | burst | weapon | spell | pet | props | step | timer | color | aeonic | autows]':format(_addon.name))
+        windower.add_to_chat(207, '%s: valid commands [save | move | burst | weapon | spell | pet | props | step | timer | color | aeonic | autows | am3 | am3ws]':format(_addon.name))
     end
 end)
 
@@ -913,11 +837,7 @@ windower.register_event('job change', function(job, lvl)
         config.reload(settings)
         load_autows(false, false)
         update_opener()
-        
         if autows.enabled or wasEnabled then
-            if settings.debugLogs then
-                windower.add_to_chat(207, "job change")
-            end
             schedule_autows_status()
         end
     end
@@ -945,16 +865,12 @@ windower.register_event('load', function()
         info.main_bag = equip.main_bag
         info.range = equip.range
         info.range_bag = equip.range_bag
-        
         load_autows(false, false)
         update_weapon()
         update_opener()
         buffs[info.player] = {}
         autowsLastCheck = os.clock()
         if autows.enabled then
-            if settings.debugLogs then
-                windower.add_to_chat(207, "initialize")
-            end
             schedule_autows_status()
         end        
     end
